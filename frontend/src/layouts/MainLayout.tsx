@@ -1,6 +1,16 @@
-import React, { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Navbar } from "@heroui/navbar";
+import { Button } from "@heroui/button";
+import { isAuthenticated, getUserData, setUserData, clearUserData, processGoogleUser, UserData, verifyTokenWithBackend, bypassAuth } from "../utils/auth";
+
+// Define Google auth types
+declare global {
+  interface Window {
+    google: any;
+    googleAuthInitialized: boolean;
+  }
+}
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -8,7 +18,9 @@ interface MainLayoutProps {
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const location = useLocation();
-  const [isLoggedIn, setIsLoggedIn] = useState(true); // For demo, assume logged in
+  const [isLoggedIn, setIsLoggedIn] = useState(isAuthenticated());
+  const [user, setUser] = useState<UserData | null>(getUserData());
+  const [authError, setAuthError] = useState<string | null>(null);
   
   // Navigation links
   const navItems = [
@@ -17,6 +29,216 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     { name: "Admin", href: "/admin", active: location.pathname === "/admin" },
   ];
 
+  // Initialize Google Identity Services
+  const initializeGoogleAuth = () => {
+    console.log('Initializing Google Identity Services...');
+    
+    if (!window.google || !window.google.accounts) {
+      console.error('Google Identity Services not available');
+      setAuthError('Google authentication not available. Please reload the page and try again.');
+      return;
+    }
+    
+    try {
+      // Initialize Google Identity Services
+      window.google.accounts.id.initialize({
+        client_id: '80900908307-8kjc4tcjjt26kk53taogjj1qr3es80mc.apps.googleusercontent.com',
+        callback: handleGoogleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      });
+      
+      // Render the Google Sign-In button
+      renderGoogleButton();
+      
+      window.googleAuthInitialized = true;
+      console.log('Google Identity Services initialized successfully');
+    } catch (error) {
+      console.error('Error initializing Google Identity Services:', error);
+      setAuthError(`Error initializing Google authentication: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  
+  // Function to render the Google Sign-In button
+  const renderGoogleButton = () => {
+    console.log('Rendering Google Sign-In button');
+    const buttonContainer = document.getElementById('google-sign-in-button');
+    
+    if (buttonContainer && window.google && window.google.accounts) {
+      // Clear any existing content in the container
+      buttonContainer.innerHTML = '';
+      
+      window.google.accounts.id.renderButton(
+        buttonContainer,
+        { 
+          type: 'standard',
+          theme: 'outline', 
+          size: 'large',
+          text: 'signin_with',
+          shape: 'rectangular',
+          logo_alignment: 'left',
+          width: '100%'
+        }
+      );
+    } else {
+      console.warn('Button container or Google Identity Services not available for rendering');
+    }
+  };
+  
+  // Initial load of Google Identity Services
+  useEffect(() => {
+    // Load the new Google Identity Services library
+    const loadGoogleIdentityServices = () => {
+      console.log('Loading Google Identity Services...');
+      
+      // Create script tag
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        console.log('Google Identity Services loaded successfully');
+        initializeGoogleAuth();
+      };
+      script.onerror = (error) => {
+        console.error('Failed to load Google Identity Services:', error);
+        setAuthError('Failed to load Google authentication. Please try again later.');
+      };
+      
+      // Add the script to the document
+      document.body.appendChild(script);
+    };
+    
+    // Check if Google Identity Services are already loaded
+    if (!window.google || !window.google.accounts) {
+      loadGoogleIdentityServices();
+    } else if (!window.googleAuthInitialized) {
+      initializeGoogleAuth();
+    }
+  }, []);
+  
+  // Re-render Google button when isLoggedIn changes (for logout case)
+  useEffect(() => {
+    // Only render the button when not logged in and Google Identity Services is initialized
+    if (!isLoggedIn && window.google && window.google.accounts && window.googleAuthInitialized) {
+      console.log('User logged out, re-rendering Google Sign-In button');
+      
+      // Small timeout to ensure DOM is ready
+      setTimeout(() => {
+        renderGoogleButton();
+      }, 100);
+    }
+  }, [isLoggedIn]);
+  
+  // Handle Google Sign-In credential response
+  const handleGoogleCredentialResponse = async (response: any) => {
+    console.log('Google credential response received:', response);
+    
+    try {
+      if (!response || !response.credential) {
+        throw new Error('Invalid credential response');
+      }
+      
+      const idToken = response.credential;
+      
+      // Decode the ID token to get basic user info
+      const payload = decodeJwt(idToken);
+      console.log('Decoded JWT payload:', payload);
+      
+      if (!payload) {
+        throw new Error('Failed to decode JWT token');
+      }
+      
+      // Create user data
+      const userData: UserData = {
+        id: payload.sub,
+        name: payload.name,
+        email: payload.email,
+        imageUrl: payload.picture,
+        idToken: idToken
+      };
+      
+      // Verify token with backend
+      console.log('Verifying token with backend...');
+      const verificationResult = await verifyTokenWithBackend(idToken);
+      
+      if (verificationResult.success) {
+        console.log('Token verified successfully');
+        
+        // Store user data
+        setUser(userData);
+        setUserData(userData);
+        setIsLoggedIn(true);
+        setAuthError(null);
+      } else {
+        console.error('Failed to verify token with backend:', verificationResult.errorMessage);
+        setAuthError(`Authentication failed: ${verificationResult.errorMessage || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error processing Google credential:', error);
+      setAuthError(`Error processing authentication: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  
+  // Simple JWT decoder function (no validation, just for getting payload)
+  const decodeJwt = (token: string) => {
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      
+      return JSON.parse(jsonPayload);
+    } catch (error) {
+      console.error('Error decoding JWT:', error);
+      return null;
+    }
+  };
+  
+  // Sign out function
+  const signOut = () => {
+    try {
+      console.log('Signing out user:', user?.email);
+      
+      // Always clear local storage and state first
+      clearUserData();
+      setUser(null);
+      setIsLoggedIn(false);
+      
+      // Then try Google sign out if appropriate
+      if (window.google && window.google.accounts) {
+        try {
+          // Google Identity Services doesn't have an explicit sign-out method
+          // but we can revoke the token
+          console.log('Revoking Google authentication token');
+          window.google.accounts.id.disableAutoSelect();
+        } catch (error: unknown) {
+          console.error('Error with Google sign out:', error);
+        }
+      } else {
+        console.log('No Google Identity Services instance available, using direct logout');
+      }
+    } catch (error: unknown) {
+      console.error('Error during sign out process:', error);
+      // Still attempt to clear data even if there was an error
+      try {
+        clearUserData();
+        setUser(null);
+        setIsLoggedIn(false);
+      } catch (finalError: unknown) {
+        console.error('Critical error during fallback sign out:', finalError);
+      }
+    }
+  };
+
+  // Handle Google sign-in click - no longer needed as we're using the Google button directly
+  // This is kept as a reference but not used
+  const handleSignInClick = () => {
+    console.log('Native sign-in button clicked - this should not be called');
+    setAuthError('Please use the Google sign-in button below');
+  };
+
   // If not logged in, show login instead
   if (!isLoggedIn) {
     return (
@@ -24,26 +246,17 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         <div className="flex flex-col items-center justify-center min-h-screen p-4">
           <div className="w-full max-w-md p-6 bg-card rounded-lg shadow-lg">
             <h1 className="text-2xl font-bold mb-6 text-center">Keepsake Login</h1>
-            <form className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1" htmlFor="password">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  className="w-full p-2 border rounded"
-                  placeholder="Enter your password"
-                />
-              </div>
-              <button
-                type="button"
-                className="w-full py-2 px-4 bg-primary text-primary-foreground rounded hover:bg-primary/90"
-                onClick={() => setIsLoggedIn(true)}
-              >
-                Login
-              </button>
-            </form>
+            
+            <div className="space-y-4">
+              {/* The Google Sign-In button will be rendered here */}
+              <div id="google-sign-in-button" className="flex justify-center"></div>
+              
+              {authError && (
+                <div className="text-red-500 text-sm mt-2">
+                  {authError}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -72,9 +285,19 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
               ))}
             </nav>
           </div>
-          <div>
+          <div className="flex items-center gap-4">
+            {user && (
+              <div className="flex items-center gap-2">
+                <img 
+                  src={user.imageUrl} 
+                  alt={user.name}
+                  className="w-8 h-8 rounded-full" 
+                />
+                <span className="text-sm font-medium hidden md:inline">{user.name}</span>
+              </div>
+            )}
             <button
-              onClick={() => setIsLoggedIn(false)}
+              onClick={signOut}
               className="text-sm font-medium text-muted-foreground hover:text-foreground"
             >
               Logout
