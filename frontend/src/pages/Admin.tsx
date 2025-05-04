@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { Card } from "@heroui/react";
 import { Input } from "@heroui/input";
 import { Button } from "@heroui/button";
-import { Tabs } from "@heroui/react";
 import MainLayout from "../layouts/MainLayout";
 
 interface Log {

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Navbar } from "@heroui/navbar";
-import { Button } from "@heroui/button";
-import { isAuthenticated, getUserData, setUserData, clearUserData, processGoogleUser, UserData, verifyTokenWithBackend, bypassAuth } from "../utils/auth";
+import { isAuthenticated, getUserData, setUserData, clearUserData, UserData, verifyTokenWithBackend } from "../utils/auth";
 
 // Define Google auth types
 declare global {
@@ -230,13 +229,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         console.error('Critical error during fallback sign out:', finalError);
       }
     }
-  };
-
-  // Handle Google sign-in click - no longer needed as we're using the Google button directly
-  // This is kept as a reference but not used
-  const handleSignInClick = () => {
-    console.log('Native sign-in button clicked - this should not be called');
-    setAuthError('Please use the Google sign-in button below');
   };
 
   // If not logged in, show login instead

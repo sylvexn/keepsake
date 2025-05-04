@@ -2,9 +2,6 @@ import React, { useEffect, useState } from "react";
 import { Card } from "@heroui/react";
 import { Input } from "@heroui/input";
 import { Button } from "@heroui/button";
-import { Select } from "@heroui/react";
-import { Pagination } from "@heroui/react";
-import { Modal } from "@heroui/react";
 import MainLayout from "../layouts/MainLayout";
 
 interface Image {
