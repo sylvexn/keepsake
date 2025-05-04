@@ -6,6 +6,10 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+from flask_cors import CORS
+import google.auth.transport.requests
+from google.oauth2 import id_token
+import requests
 
 # Load environment variables from .env file
 load_dotenv()
@@ -50,6 +54,18 @@ logging.basicConfig(
 
 # Initialize the Flask app
 app = Flask(__name__)
+CORS(app, resources={
+    r"/api/*": {"origins": ["http://localhost:5173", "https://i.syl.rest"]},
+    r"/upload": {"origins": ["http://localhost:5173", "https://i.syl.rest"]},
+    r"/*": {"origins": ["http://localhost:5173", "https://i.syl.rest"]}
+}, supports_credentials=True)  # Enable CORS for specific routes with credential support
+
+# Set security headers to avoid COOP issues
+@app.after_request
+def set_security_headers(response):
+    # Set Cross-Origin-Opener-Policy to same-origin-allow-popups to allow Google Auth popups
+    response.headers['Cross-Origin-Opener-Policy'] = 'same-origin-allow-popups'
+    return response
 
 # Initialize database function
 def initialize_database():
@@ -268,8 +284,74 @@ def resolve_error(error_id):
         return jsonify({"message": "Error resolved successfully"}), 200
     except Exception as e:
         logging.error(f"Error resolving error {error_id}: {str(e)}")
-        database.add_error(f"Error {error_id} resolution error", str(e), "medium")
+        database.add_error(f"Error {error_id} resolve error", str(e), "medium")
         return jsonify({"error": "Failed to resolve error"}), 500
+
+# API endpoint for Google authentication
+@app.route('/api/auth/google', methods=['POST'])
+def google_auth():
+    try:
+        # Get the ID token from the request
+        data = request.get_json()
+        if not data or 'idToken' not in data:
+            return jsonify({"error": "ID token is required"}), 400
+        
+        token = data['idToken']
+        
+        # Specify the CLIENT_ID of the app that accesses the backend
+        CLIENT_ID = '80900908307-8kjc4tcjjt26kk53taogjj1qr3es80mc.apps.googleusercontent.com'
+        
+        # Set the authorized email(s) - only this email can log in
+        AUTHORIZED_EMAILS = os.environ.get("AUTHORIZED_EMAILS", "").split(",")
+        
+        # If no authorized emails are set, use a default one for development
+        if not AUTHORIZED_EMAILS or (len(AUTHORIZED_EMAILS) == 1 and AUTHORIZED_EMAILS[0] == ""):
+            logging.warning("No AUTHORIZED_EMAILS environment variable set, using default safety measures")
+            # You would typically add your email here as a fallback
+            # This is empty now and will cause all logins to fail unless env var is set
+            AUTHORIZED_EMAILS = []
+        
+        # Verify the token
+        try:
+            # Verify the token's signature and extract its payload
+            idinfo = id_token.verify_oauth2_token(
+                token, google.auth.transport.requests.Request(), CLIENT_ID)
+            
+            # Get user info
+            userid = idinfo['sub']
+            email = idinfo.get('email', '')
+            name = idinfo.get('name', '')
+            
+            # Check if the user is authorized
+            if email not in AUTHORIZED_EMAILS:
+                logging.warning(f"Unauthorized login attempt: {email}")
+                database.add_log("WARNING", "Unauthorized login attempt", "app.py", f"User: {email}")
+                return jsonify({"error": "You are not authorized to access this application"}), 403
+            
+            # Log the successful login
+            logging.info(f"User logged in with Google: {email}")
+            database.add_log("INFO", f"User logged in with Google", "app.py", f"User: {email}")
+            
+            # Return user info
+            return jsonify({
+                "success": True,
+                "user": {
+                    "id": userid,
+                    "email": email,
+                    "name": name
+                }
+            }), 200
+            
+        except ValueError as e:
+            # Invalid token
+            logging.warning(f"Invalid Google ID token: {str(e)}")
+            database.add_log("WARNING", "Invalid Google ID token", "app.py", str(e))
+            return jsonify({"error": "Invalid token"}), 401
+            
+    except Exception as e:
+        logging.error(f"Google auth error: {str(e)}")
+        database.add_error("Google auth error", str(e), "high")
+        return jsonify({"error": "Authentication failed"}), 500
 
 # Health check endpoint
 @app.route('/health', methods=['GET'])
