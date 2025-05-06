@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Navbar } from "@heroui/navbar";
+import { 
+  Navbar, 
+  NavbarMenuToggle, 
+  NavbarMenu, 
+  NavbarMenuItem 
+} from "@heroui/navbar";
 import { isAuthenticated, getUserData, setUserData, clearUserData, UserData, verifyTokenWithBackend } from "../utils/auth";
 
 // Define Google auth types
@@ -20,6 +25,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(isAuthenticated());
   const [user, setUser] = useState<UserData | null>(getUserData());
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   // Navigation links
   const navItems = [
@@ -294,8 +300,51 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             >
               Logout
             </button>
+            <NavbarMenuToggle 
+              className="md:hidden"
+              onChange={() => setIsMenuOpen(!isMenuOpen)}
+            />
           </div>
         </div>
+        
+        <NavbarMenu>
+          <div className="pt-4 pb-6 px-4 space-y-4">
+            {navItems.map((item) => (
+              <NavbarMenuItem key={item.name}>
+                <Link
+                  to={item.href}
+                  className={`text-lg font-medium block py-3 px-2 rounded transition-colors ${
+                    item.active 
+                      ? "bg-primary/10 text-primary" 
+                      : "text-foreground hover:bg-muted/50"
+                  }`}
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  {item.name}
+                </Link>
+              </NavbarMenuItem>
+            ))}
+            
+            <div className="pt-4 border-t border-border">
+              {user && (
+                <div className="flex items-center gap-3 py-3 px-2">
+                  <img 
+                    src={user.imageUrl} 
+                    alt={user.name}
+                    className="w-10 h-10 rounded-full" 
+                  />
+                  <span className="text-md font-medium">{user.name}</span>
+                </div>
+              )}
+              <button
+                onClick={signOut}
+                className="w-full text-left py-3 px-2 text-md font-medium text-red-500 hover:bg-muted/50 rounded transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </NavbarMenu>
       </Navbar>
       <main>{children}</main>
     </div>
