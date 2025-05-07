@@ -53,6 +53,12 @@ const Photos = () => {
   const [deleteTarget, setDeleteTarget] = useState<number | number[]>([]);
   const [deleteInProgress, setDeleteInProgress] = useState(false);
 
+  // NEW: State for rename functionality
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newFilename, setNewFilename] = useState("");
+  const [renameInProgress, setRenameInProgress] = useState(false);
+  const [renameError, setRenameError] = useState("");
+
   // Ref to keep track of the latest total images count
   const prevTotalImagesRef = useRef<number | null>(null);
 
@@ -138,6 +144,10 @@ const Photos = () => {
   const openImageModal = (image: Image) => {
     setSelectedImage(image);
     setIsModalOpen(true);
+    setIsRenaming(false);
+    setRenameError("");
+    // NEW: Initialize the new filename with the current original filename
+    setNewFilename(image.original_filename || image.saved_filename);
   };
 
   // Copy URL to clipboard
@@ -229,6 +239,79 @@ const Photos = () => {
     }
   };
 
+  // NEW: Start rename mode
+  const startRename = () => {
+    if (!selectedImage) return;
+    setIsRenaming(true);
+    setNewFilename(selectedImage.original_filename || selectedImage.saved_filename);
+    setRenameError("");
+  };
+
+  // NEW: Cancel rename
+  const cancelRename = () => {
+    setIsRenaming(false);
+    setRenameError("");
+  };
+
+  // NEW: Save the new filename
+  const saveNewFilename = async () => {
+    if (!selectedImage) return;
+    
+    // Validate filename
+    if (!newFilename || newFilename.trim() === "") {
+      setRenameError("Filename cannot be empty");
+      return;
+    }
+    
+    setRenameInProgress(true);
+    setRenameError("");
+    
+    try {
+      const response = await fetch(`/api/images/${selectedImage.id}/rename`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          original_filename: newFilename
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to rename image");
+      }
+      
+      // Update the image in state
+      if (selectedImage) {
+        const updatedImage = {
+          ...selectedImage,
+          original_filename: newFilename
+        };
+        setSelectedImage(updatedImage);
+        
+        // Also update in the gallery if present
+        if (imagesData) {
+          const updatedImages = imagesData.images.map(img => 
+            img.id === selectedImage.id ? updatedImage : img
+          );
+          setImagesData({
+            ...imagesData,
+            images: updatedImages
+          });
+        }
+      }
+      
+      // Exit rename mode
+      setIsRenaming(false);
+    } catch (error) {
+      console.error("Error renaming image:", error);
+      setRenameError(error instanceof Error ? error.message : "Failed to rename image");
+    } finally {
+      setRenameInProgress(false);
+    }
+  };
+
   return (
     <MainLayout>
       <div className="container mx-auto p-6">
@@ -309,7 +392,7 @@ const Photos = () => {
         </Card>
         
         {/* Gallery Controls */}
-        {!loading && imagesData?.images?.length > 0 && (
+        {!loading && ((imagesData?.images?.length ?? 0) > 0) && (
           <div className="flex justify-between items-center mb-4">
             <div className="flex space-x-2">
               <button
@@ -542,9 +625,25 @@ const Photos = () => {
           <div className={`fixed inset-0 bg-black/50 flex items-center justify-center z-50 ${isModalOpen ? '' : 'hidden'}`}>
             <div className="bg-background rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
               <div className="flex justify-between items-center p-4 border-b">
-                <h3 className="text-lg font-semibold truncate">
-                  {selectedImage.original_filename || selectedImage.saved_filename}
-                </h3>
+                {!isRenaming ? (
+                  <h3 className="text-lg font-semibold truncate">
+                    {selectedImage.original_filename || selectedImage.saved_filename}
+                  </h3>
+                ) : (
+                  <div className="flex-grow">
+                    <input
+                      type="text"
+                      value={newFilename}
+                      onChange={(e) => setNewFilename(e.target.value)}
+                      className="w-full p-1 border rounded text-lg"
+                      autoFocus
+                      disabled={renameInProgress}
+                    />
+                    {renameError && (
+                      <p className="text-red-500 text-sm mt-1">{renameError}</p>
+                    )}
+                  </div>
+                )}
                 <button
                   onClick={() => setIsModalOpen(false)}
                   className="text-muted-foreground hover:text-foreground"
@@ -576,23 +675,49 @@ const Photos = () => {
                   </div>
                 </div>
                 <div className="flex justify-end mt-4 space-x-2">
-                  <Button 
-                    variant="ghost"
-                    onClick={() => copyToClipboard(selectedImage.url)}
-                  >
-                    Copy URL
-                  </Button>
-                  <Button 
-                    variant="ghost"
-                    onClick={() => {
-                      setIsModalOpen(false);
-                      confirmDeleteSingle(selectedImage.id);
-                    }}
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    Delete
-                  </Button>
-                  <Button onClick={() => setIsModalOpen(false)}>Close</Button>
+                  {!isRenaming ? (
+                    <>
+                      <Button 
+                        variant="ghost"
+                        onClick={() => copyToClipboard(selectedImage.url)}
+                      >
+                        Copy URL
+                      </Button>
+                      <Button 
+                        variant="ghost"
+                        onClick={startRename}
+                      >
+                        Rename
+                      </Button>
+                      <Button 
+                        variant="ghost"
+                        onClick={() => {
+                          setIsModalOpen(false);
+                          confirmDeleteSingle(selectedImage.id);
+                        }}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        Delete
+                      </Button>
+                      <Button onClick={() => setIsModalOpen(false)}>Close</Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button 
+                        variant="ghost"
+                        onClick={cancelRename}
+                        disabled={renameInProgress}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        onClick={saveNewFilename}
+                        disabled={renameInProgress}
+                      >
+                        {renameInProgress ? "Saving..." : "Save"}
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -636,4 +761,4 @@ const Photos = () => {
   );
 };
 
-export default Photos; 
+export default Photos;
