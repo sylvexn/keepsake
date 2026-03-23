@@ -41,13 +41,13 @@ DEBUG = os.environ.get("KEEPSAKE_DEBUG", "False").lower() == "true"
 # Import database module and make DATABASE_PATH available to it
 import database
 database.DATABASE_PATH = DATABASE_PATH
+database.init_db()
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(os.path.join(os.path.dirname(__file__), 'keepsake.log')),
         logging.StreamHandler()
     ]
 )
