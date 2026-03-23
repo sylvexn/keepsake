@@ -186,6 +186,24 @@ def get_image(image_id):
         if conn:
             conn.close()
 
+def rename_image(image_id, new_name):
+    """Rename an image's original filename."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE images SET original_filename = ? WHERE id = ?", (new_name, image_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        if conn:
+            conn.rollback()
+        logging.error(f"Database error when renaming image {image_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 def delete_image(image_id):
     """Delete an image by ID."""
     conn = None

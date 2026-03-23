@@ -18,14 +18,14 @@ load_dotenv()
 # Base directory of the backend
 BASE_DIR = Path(__file__).resolve().parent
 
-# Upload folder for images
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+# Upload folder for images (use /data/uploads in Docker, local otherwise)
+UPLOAD_FOLDER = os.environ.get("KEEPSAKE_UPLOAD_DIR", os.path.join(BASE_DIR, "uploads"))
 
 # Create uploads directory if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Database file path
-DATABASE_PATH = os.path.join(BASE_DIR, "keepsake.db")
+# Database file path (use /data/keepsake.db in Docker, local otherwise)
+DATABASE_PATH = os.environ.get("KEEPSAKE_DB_PATH", os.path.join(BASE_DIR, "keepsake.db"))
 
 # Secret key for authentication
 SECRET_KEY = os.environ.get("KEEPSAKE_SECRET_KEY")
@@ -238,6 +238,29 @@ def delete_image(image_id):
         logging.error(f"Error deleting image {image_id}: {str(e)}")
         database.add_error(f"Image {image_id} deletion error", str(e), "medium")
         return jsonify({"error": "Failed to delete image"}), 500
+
+# API endpoint to rename an image
+@app.route('/api/images/<int:image_id>/rename', methods=['PATCH'])
+def rename_image(image_id):
+    try:
+        data = request.get_json()
+        if not data or 'original_filename' not in data:
+            return jsonify({"error": "New filename is required"}), 400
+
+        new_name = data['original_filename']
+        image = database.get_image(image_id)
+        if not image:
+            return jsonify({"error": "Image not found"}), 404
+
+        success = database.rename_image(image_id, new_name)
+        if not success:
+            return jsonify({"error": "Failed to rename image"}), 500
+
+        logging.info(f"Image {image_id} renamed to {new_name}")
+        return jsonify({"message": "Image renamed successfully"}), 200
+    except Exception as e:
+        logging.error(f"Error renaming image {image_id}: {str(e)}")
+        return jsonify({"error": "Failed to rename image"}), 500
 
 # API endpoint to get logs
 @app.route('/api/logs', methods=['GET'])
