@@ -176,6 +176,10 @@ const Photos = () => {
     return date.toLocaleDateString() + " " + date.toLocaleTimeString();
   };
 
+  // Check if file is a video
+  const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.avi', '.mkv'];
+  const isVideo = (image: Image) => VIDEO_EXTENSIONS.includes(image.file_extension?.toLowerCase());
+
   // NEW: Toggle selection of an image
   const toggleImageSelection = (imageId: number) => {
     setSelectedImages(prev => {
@@ -343,6 +347,11 @@ const Photos = () => {
                 <option value="jpeg">JPEG</option>
                 <option value="gif">GIF</option>
                 <option value="webp">WEBP</option>
+                <option value="mp4">MP4</option>
+                <option value="webm">WEBM</option>
+                <option value="mov">MOV</option>
+                <option value="avi">AVI</option>
+                <option value="mkv">MKV</option>
               </select>
             </div>
             <div>
@@ -459,7 +468,7 @@ const Photos = () => {
           <>
             {imagesData?.images.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-lg text-muted-foreground">No images found matching your criteria.</p>
+                <p className="text-lg text-muted-foreground">No files found matching your criteria.</p>
               </div>
             ) : viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -492,15 +501,24 @@ const Photos = () => {
                           </svg>
                         </button>
                       </div>
-                      <div 
+                      <div
                         className="h-48 bg-gray-100 cursor-pointer"
                         onClick={() => openImageModal(image)}
                       >
-                        <img 
-                          src={image.url} 
-                          alt={image.original_filename || image.saved_filename} 
-                          className="w-full h-full object-contain"
-                        />
+                        {isVideo(image) ? (
+                          <video
+                            src={image.url}
+                            className="w-full h-full object-contain"
+                            muted
+                            preload="metadata"
+                          />
+                        ) : (
+                          <img
+                            src={image.url}
+                            alt={image.original_filename || image.saved_filename}
+                            className="w-full h-full object-contain"
+                          />
+                        )}
                       </div>
                     </div>
                     <div className="p-4">
@@ -558,15 +576,24 @@ const Photos = () => {
                         </svg>
                       </button>
                     </div>
-                    <div 
+                    <div
                       className="h-16 w-16 bg-gray-100 cursor-pointer mr-4 flex-shrink-0"
                       onClick={() => openImageModal(image)}
                     >
-                      <img 
-                        src={image.url} 
-                        alt={image.original_filename || image.saved_filename} 
-                        className="w-full h-full object-contain"
-                      />
+                      {isVideo(image) ? (
+                        <video
+                          src={image.url}
+                          className="w-full h-full object-contain"
+                          muted
+                          preload="metadata"
+                        />
+                      ) : (
+                        <img
+                          src={image.url}
+                          alt={image.original_filename || image.saved_filename}
+                          className="w-full h-full object-contain"
+                        />
+                      )}
                     </div>
                     <div className="flex-grow">
                       <div className="font-medium">
@@ -652,11 +679,20 @@ const Photos = () => {
                 </button>
               </div>
               <div className="p-4 overflow-auto" style={{ maxHeight: 'calc(90vh - 130px)' }}>
-                <img 
-                  src={selectedImage.url} 
-                  alt={selectedImage.original_filename || selectedImage.saved_filename}
-                  className="mx-auto max-h-[70vh] object-contain"
-                />
+                {isVideo(selectedImage) ? (
+                  <video
+                    src={selectedImage.url}
+                    controls
+                    autoPlay
+                    className="mx-auto max-h-[70vh] object-contain"
+                  />
+                ) : (
+                  <img
+                    src={selectedImage.url}
+                    alt={selectedImage.original_filename || selectedImage.saved_filename}
+                    className="mx-auto max-h-[70vh] object-contain"
+                  />
+                )}
               </div>
               <div className="p-4 border-t">
                 <div className="grid grid-cols-2 gap-4 text-sm">

@@ -82,12 +82,18 @@ def generate_unique_filename(original_filename):
     extension = get_file_extension(original_filename)
     return f"{uuid.uuid4().hex[:6]}{extension}"
 
+# Allowed file extensions
+IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}
+VIDEO_EXTENSIONS = {'.mp4', '.webm', '.mov', '.avi', '.mkv'}
+ALLOWED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+
 # Helper function to check if file type is allowed
 def allowed_file(filename):
-    # Define allowed extensions
-    ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}
     extension = get_file_extension(filename)
     return extension in ALLOWED_EXTENSIONS
+
+def is_video(filename):
+    return get_file_extension(filename) in VIDEO_EXTENSIONS
 
 # Route for image upload (ShareX endpoint)
 @app.route('/upload', methods=['POST'])
@@ -103,13 +109,15 @@ def upload_image():
         database.add_log("WARNING", "Upload attempt with invalid secret key", "app.py", f"IP: {request.remote_addr}")
         return jsonify({"error": "Authentication failed"}), 403
     
-    # Check if image file is included in the request
-    if 'image' not in request.files:
-        logging.warning("Upload attempt without image file")
-        database.add_log("WARNING", "Upload attempt without image file", "app.py", f"IP: {request.remote_addr}")
-        return jsonify({"error": "No image file provided"}), 400
-    
-    image_file = request.files['image']
+    # Check if file is included in the request (accept 'image' or 'file' field)
+    if 'image' in request.files:
+        image_file = request.files['image']
+    elif 'file' in request.files:
+        image_file = request.files['file']
+    else:
+        logging.warning("Upload attempt without file")
+        database.add_log("WARNING", "Upload attempt without file", "app.py", f"IP: {request.remote_addr}")
+        return jsonify({"error": "No file provided"}), 400
     
     # Check if the file has a name
     if image_file.filename == '':
