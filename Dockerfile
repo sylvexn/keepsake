@@ -9,7 +9,7 @@ RUN npm run build
 # Stage 2: Production
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y nginx supervisor && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y nginx supervisor ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 WORKDIR /app/backend

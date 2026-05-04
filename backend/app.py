@@ -1,6 +1,8 @@
 import os
 import uuid
 import logging
+import shutil
+import subprocess
 from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -95,6 +97,37 @@ def allowed_file(filename):
 def is_video(filename):
     return get_file_extension(filename) in VIDEO_EXTENSIONS
 
+# Remux MP4/MOV to put moov atom at the start so Discord embeds and mobile
+# browsers can begin playback before the full file downloads. No re-encode.
+def faststart_remux(file_path):
+    if not shutil.which("ffmpeg"):
+        logging.info("ffmpeg not available, skipping faststart remux")
+        return
+    ext = get_file_extension(file_path)
+    if ext not in {".mp4", ".mov", ".m4v"}:
+        return
+    tmp_path = f"{file_path}.faststart.mp4"
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", file_path, "-c", "copy",
+             "-movflags", "+faststart", "-f", "mp4", tmp_path],
+            capture_output=True, timeout=120
+        )
+        if result.returncode == 0 and os.path.exists(tmp_path):
+            os.replace(tmp_path, file_path)
+            logging.info(f"Faststart remux applied: {file_path}")
+        else:
+            logging.warning(f"Faststart remux failed: {result.stderr.decode('utf-8', 'ignore')[:500]}")
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    except Exception as e:
+        logging.warning(f"Faststart remux error: {e}")
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
 # Route for image upload (ShareX endpoint)
 @app.route('/upload', methods=['POST'])
 def upload_image():
@@ -140,7 +173,12 @@ def upload_image():
         
         # Save the file
         image_file.save(file_path)
-        
+
+        # For videos, remux MP4/MOV with faststart so Discord embeds and
+        # mobile browsers can stream them.
+        if is_video(saved_filename):
+            faststart_remux(file_path)
+
         # Get file size
         file_size = os.path.getsize(file_path)
         
